@@ -443,7 +443,7 @@ footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-si
 
       <div class="prog-wrap" id="nm-prog">
         <div class="prog-track"><div class="prog-fill pulse" id="nm-fill"></div></div>
-        <div class="prog-label" id="nm-prog-label">Аналіз гучності (1/2)…</div>
+        <div class="prog-label" id="nm-prog-label">Аналіз гучності (1/3)…</div>
       </div>
 
       <div class="result-wrap" id="nm-result">
@@ -1028,7 +1028,7 @@ document.getElementById('nm-btn').addEventListener('click', async () => {
   const TP  = parseFloat(document.getElementById('nm-tp').value)  || -1;
   const LRA = parseFloat(document.getElementById('nm-lra').value) || 7;
 
-  showProg('nm', 'Аналіз гучності (1/2)…');
+  showProg('nm', 'Аналіз гучності (1/3)…');
   try {
     const ff = await getFFmpeg();
     const inExt   = ext(nmFile.name);
@@ -1057,7 +1057,7 @@ document.getElementById('nm-btn').addEventListener('click', async () => {
     const stats  = JSON.parse(logTxt.slice(braceS, braceE + 1));
 
     // Pass 2 — apply
-    showProg('nm', 'Нормалізація (2/2)…');
+    showProg('nm', 'Нормалізація (2/3)…');
     const filter = [
       `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}`,
       `measured_I=${stats.input_i}`,
@@ -1081,18 +1081,33 @@ document.getElementById('nm-btn').addEventListener('click', async () => {
     await ff.run(...args2);
     clearInterval(ticker);
 
+    // Pass 3 — measure output
+    const logs2 = [];
+    ff.setLogger(({ type, message }) => { if (type === 'fferr') logs2.push(message); });
+    showProg('nm', 'Вимірювання результату (3/3)…');
+    const nullOut2 = 'loudnorm_null2.tmp';
+    await ff.run('-i', outName, '-af', `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}:print_format=json`, '-f', 'null', nullOut2);
+    try { ff.FS('unlink', nullOut2); } catch(e) {}
+    const logTxt2  = logs2.join('\n');
+    const js2      = logTxt2.indexOf('"input_i"');
+    let measured   = null;
+    if (js2 !== -1) {
+      try { measured = JSON.parse(logTxt2.slice(logTxt2.lastIndexOf('{', js2), logTxt2.indexOf('}', js2) + 1)); } catch(e) {}
+    }
+    ff.setLogger(() => {});
+
     const data = ff.FS('readFile', outName);
     const blob = new Blob([data.buffer], { type: mimeOf(inExt) });
     try { ff.FS('unlink', inName); } catch(e) {}
     try { ff.FS('unlink', outName); } catch(e) {}
 
-    ff.setLogger(() => {});
-
     showResult('nm', blob, stem(nmFile.name) + '_normalized.' + inExt, [
-      { label: 'Вихідна гучність',    val: parseFloat(stats.input_i).toFixed(1) + ' LUFS' },
-      { label: 'Нова гучність',        val: parseFloat(stats.output_i || I).toFixed(1) + ' LUFS' },
-      { label: 'True Peak (вхідний)', val: parseFloat(stats.input_tp).toFixed(1) + ' dBTP' },
-      { label: 'True Peak (цільовий)',val: TP + ' dBTP' },
+      { label: 'LUFS до',         val: parseFloat(stats.input_i).toFixed(1) + ' LUFS' },
+      { label: 'LUFS після',      val: (measured ? parseFloat(measured.input_i).toFixed(1) : I) + ' LUFS' },
+      { label: 'True Peak до',    val: parseFloat(stats.input_tp).toFixed(1) + ' dBTP' },
+      { label: 'True Peak після', val: (measured ? parseFloat(measured.input_tp).toFixed(1) : TP) + ' dBTP' },
+      { label: 'LRA до',          val: parseFloat(stats.input_lra).toFixed(1) + ' LU' },
+      { label: 'LRA після',       val: (measured ? parseFloat(measured.input_lra).toFixed(1) : LRA) + ' LU' },
     ]);
   } catch(e) {
     if (ffmpegInst) ffmpegInst.setLogger(() => {});
