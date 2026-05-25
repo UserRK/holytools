@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AudioTools — Конвертер · LUFS · Очистка мови</title>
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+<script src="/lib/ffmpeg.min.js"></script>
 <style>
 :root {
   --bg:      #09090f;
@@ -253,8 +253,8 @@ footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-si
 
 <div id="overlay">
   <div class="ov-spinner"></div>
-  <div class="ov-title" id="ov-title">Завантаження FFmpeg…</div>
-  <div class="ov-sub" id="ov-sub">Перший запуск: ~20–60 с залежно від з'єднання</div>
+  <div class="ov-title" id="ov-title">Ініціалізація FFmpeg…</div>
+  <div class="ov-sub" id="ov-sub"></div>
 </div>
 
 <header>
@@ -767,10 +767,10 @@ async function getFFmpeg() {
     return ffmpegInst;
   }
   ffmpegLoading = true;
-  showOverlay('Завантаження FFmpeg…', 'Перший запуск: ~20–60 с');
+  showOverlay('Ініціалізація FFmpeg…', '');
   ffmpegInst = createFFmpeg({
     log: false,
-    corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    corePath: '/lib/ffmpeg-core.js',
     progress: ({ ratio }) => setGlobalProgress(ratio),
   });
   await ffmpegInst.load();
