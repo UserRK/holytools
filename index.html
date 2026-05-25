@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AudioTools — Конвертер · LUFS · Очистка мови</title>
-<script src="/lib/ffmpeg.min.js"></script>
+<script src="/lib/ffmpeg.js"></script>
+<script src="/lib/ffmpeg-util.js"></script>
 <style>
 :root {
   --bg:      #09090f;
@@ -755,7 +756,8 @@ footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-si
 // ═══════════════════════════════════════════════════
 //  FFmpeg singleton
 // ═══════════════════════════════════════════════════
-const { createFFmpeg, fetchFile } = FFmpeg;
+const { FFmpeg } = FFmpegWASM;
+const { fetchFile } = FFmpegUtil;
 let ffmpegInst = null;
 let ffmpegLoading = false;
 let ffmpegBusy = false;
@@ -768,12 +770,12 @@ async function getFFmpeg() {
   }
   ffmpegLoading = true;
   showOverlay('Ініціалізація FFmpeg…', '');
-  ffmpegInst = createFFmpeg({
-    log: false,
-    corePath: window.location.origin + '/lib/ffmpeg-core.js',
-    progress: ({ ratio }) => setGlobalProgress(ratio),
+  ffmpegInst = new FFmpeg();
+  ffmpegInst.on('progress', ({ progress }) => setGlobalProgress(progress));
+  await ffmpegInst.load({
+    coreURL: window.location.origin + '/lib/ffmpeg-core.js',
+    wasmURL: window.location.origin + '/lib/ffmpeg-core.wasm',
   });
-  await ffmpegInst.load();
   ffmpegLoading = false;
   hideOverlay();
   return ffmpegInst;
@@ -954,7 +956,7 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     const outName = 'cv_out.' + cvFmt;
 
     showProg('cv', 'Завантаження файлу…');
-    ff.FS('writeFile', inName, await fetchFile(cvFile));
+    await ff.writeFile(inName, await fetchFile(cvFile));
 
     const ticker = setInterval(() =>
       setProg('cv', _globalProgressRatio, `Конвертація… ${Math.round(_globalProgressRatio*100)}%`), 200);
@@ -971,13 +973,13 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     }
     args.push(outName);
 
-    await ff.run(...args);
+    await ff.exec(args);
     clearInterval(ticker);
 
-    const data = ff.FS('readFile', outName);
+    const data = await ff.readFile(outName);
     const blob = new Blob([data.buffer], { type: mimeOf(cvFmt) });
-    try { ff.FS('unlink', inName); } catch(e) {}
-    try { ff.FS('unlink', outName); } catch(e) {}
+    try { await ff.deleteFile(inName); } catch(e) {}
+    try { await ff.deleteFile(outName); } catch(e) {}
 
     showResult('cv', blob, stem(cvFile.name) + '.' + cvFmt);
   } catch(e) {
@@ -1036,18 +1038,20 @@ document.getElementById('nm-btn').addEventListener('click', async () => {
     const outName = 'nm_out.' + inExt;
     const nullOut = 'loudnorm_null.tmp';
 
-    ff.FS('writeFile', inName, await fetchFile(nmFile));
+    await ff.writeFile(inName, await fetchFile(nmFile));
 
     const logs = [];
-    ff.setLogger(({ type, message }) => { if (type === 'fferr') logs.push(message); });
+    const logHandler1 = ({ type, message }) => { if (type === 'fferr') logs.push(message); };
+    ff.on('log', logHandler1);
 
     // Pass 1 — measure
-    await ff.run(
+    await ff.exec([
       '-i', inName,
       '-af', `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}:print_format=json`,
-      '-f', 'null', nullOut
-    );
-    try { ff.FS('unlink', nullOut); } catch(e) {}
+      '-f', 'null', nullOut,
+    ]);
+    ff.off('log', logHandler1);
+    try { await ff.deleteFile(nullOut); } catch(e) {}
 
     const logTxt   = logs.join('\n');
     const jsonStart = logTxt.indexOf('"input_i"');
@@ -1078,28 +1082,29 @@ document.getElementById('nm-btn').addEventListener('click', async () => {
     args2.push(outName);
 
     const ticker = setInterval(() => setProg('nm', _globalProgressRatio), 200);
-    await ff.run(...args2);
+    await ff.exec(args2);
     clearInterval(ticker);
 
     // Pass 3 — measure output
     const logs2 = [];
-    ff.setLogger(({ type, message }) => { if (type === 'fferr') logs2.push(message); });
+    const logHandler3 = ({ type, message }) => { if (type === 'fferr') logs2.push(message); };
+    ff.on('log', logHandler3);
     showProg('nm', 'Вимірювання результату (3/3)…');
     const nullOut2 = 'loudnorm_null2.tmp';
-    await ff.run('-i', outName, '-af', `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}:print_format=json`, '-f', 'null', nullOut2);
-    try { ff.FS('unlink', nullOut2); } catch(e) {}
+    await ff.exec(['-i', outName, '-af', `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}:print_format=json`, '-f', 'null', nullOut2]);
+    ff.off('log', logHandler3);
+    try { await ff.deleteFile(nullOut2); } catch(e) {}
     const logTxt2  = logs2.join('\n');
     const js2      = logTxt2.indexOf('"input_i"');
     let measured   = null;
     if (js2 !== -1) {
       try { measured = JSON.parse(logTxt2.slice(logTxt2.lastIndexOf('{', js2), logTxt2.indexOf('}', js2) + 1)); } catch(e) {}
     }
-    ff.setLogger(() => {});
 
-    const data = ff.FS('readFile', outName);
+    const data = await ff.readFile(outName);
     const blob = new Blob([data.buffer], { type: mimeOf(inExt) });
-    try { ff.FS('unlink', inName); } catch(e) {}
-    try { ff.FS('unlink', outName); } catch(e) {}
+    try { await ff.deleteFile(inName); } catch(e) {}
+    try { await ff.deleteFile(outName); } catch(e) {}
 
     showResult('nm', blob, stem(nmFile.name) + '_normalized.' + inExt, [
       { label: 'LUFS до',         val: parseFloat(stats.input_i).toFixed(1) + ' LUFS' },
@@ -1110,7 +1115,6 @@ document.getElementById('nm-btn').addEventListener('click', async () => {
       { label: 'LRA після',       val: (measured ? parseFloat(measured.input_lra).toFixed(1) : LRA) + ' LU' },
     ]);
   } catch(e) {
-    if (ffmpegInst) ffmpegInst.setLogger(() => {});
     showErr('nm', 'Помилка: ' + e.message);
     console.error(e);
   }
@@ -1162,7 +1166,7 @@ document.getElementById('cl-btn').addEventListener('click', async () => {
     const inName  = 'cl_in.' + inExt;
     const outName = 'cl_out.' + inExt;
 
-    ff.FS('writeFile', inName, await fetchFile(clFile));
+    await ff.writeFile(inName, await fetchFile(clFile));
 
     const filters = [];
     if (hp)     filters.push('highpass=f=80');
@@ -1179,13 +1183,13 @@ document.getElementById('cl-btn').addEventListener('click', async () => {
     args.push(outName);
 
     const ticker = setInterval(() => setProg('cl', _globalProgressRatio), 200);
-    await ff.run(...args);
+    await ff.exec(args);
     clearInterval(ticker);
 
-    const data = ff.FS('readFile', outName);
+    const data = await ff.readFile(outName);
     const blob = new Blob([data.buffer], { type: mimeOf(inExt) });
-    try { ff.FS('unlink', inName); } catch(e) {}
-    try { ff.FS('unlink', outName); } catch(e) {}
+    try { await ff.deleteFile(inName); } catch(e) {}
+    try { await ff.deleteFile(outName); } catch(e) {}
 
     showResult('cl', blob, stem(clFile.name) + '_clean.' + inExt);
   } catch(e) {
@@ -1264,7 +1268,7 @@ document.getElementById('vc-btn').addEventListener('click', async () => {
     const outName = 'vc_out.' + vcFmt;
 
     showProg('vc', 'Завантаження файлу…');
-    ff.FS('writeFile', inName, await fetchFile(vcFile));
+    await ff.writeFile(inName, await fetchFile(vcFile));
 
     const ticker = setInterval(() =>
       setProg('vc', _globalProgressRatio, `Конвертація… ${Math.round(_globalProgressRatio * 100)}%`), 200);
@@ -1309,13 +1313,13 @@ document.getElementById('vc-btn').addEventListener('click', async () => {
 
     args.push(outName);
 
-    await ff.run(...args);
+    await ff.exec(args);
     clearInterval(ticker);
 
-    const data = ff.FS('readFile', outName);
+    const data = await ff.readFile(outName);
     const blob = new Blob([data.buffer], { type: videoMimeOf(vcFmt) });
-    try { ff.FS('unlink', inName); } catch(e) {}
-    try { ff.FS('unlink', outName); } catch(e) {}
+    try { await ff.deleteFile(inName); } catch(e) {}
+    try { await ff.deleteFile(outName); } catch(e) {}
 
     showResultVideo('vc', blob, stem(vcFile.name) + '.' + vcFmt);
   } catch(e) {
@@ -1392,8 +1396,8 @@ document.getElementById('mg-btn').addEventListener('click', async () => {
     const aName   = 'mg_a.' + aExt;
     const outName = 'mg_out.' + outExt;
 
-    ff.FS('writeFile', vName, await fetchFile(mgVideo));
-    ff.FS('writeFile', aName, await fetchFile(mgAudio));
+    await ff.writeFile(vName, await fetchFile(mgVideo));
+    await ff.writeFile(aName, await fetchFile(mgAudio));
 
     const ticker = setInterval(() =>
       setProg('mg', _globalProgressRatio, `Обробка… ${Math.round(_globalProgressRatio * 100)}%`), 200);
@@ -1408,14 +1412,14 @@ document.getElementById('mg-btn').addEventListener('click', async () => {
     if (outExt === 'mp4') args.push('-movflags', '+faststart');
     args.push(outName);
 
-    await ff.run(...args);
+    await ff.exec(args);
     clearInterval(ticker);
 
-    const data = ff.FS('readFile', outName);
+    const data = await ff.readFile(outName);
     const blob = new Blob([data.buffer], { type: videoMimeOf(outExt) });
-    try { ff.FS('unlink', vName); } catch(e) {}
-    try { ff.FS('unlink', aName); } catch(e) {}
-    try { ff.FS('unlink', outName); } catch(e) {}
+    try { await ff.deleteFile(vName); } catch(e) {}
+    try { await ff.deleteFile(aName); } catch(e) {}
+    try { await ff.deleteFile(outName); } catch(e) {}
 
     showResultVideo('mg', blob, stem(mgVideo.name) + '_new_audio.' + outExt);
   } catch(e) {
