@@ -770,7 +770,7 @@ async function getFFmpeg() {
   showOverlay('Ініціалізація FFmpeg…', '');
   ffmpegInst = createFFmpeg({
     log: false,
-    corePath: '/lib/ffmpeg-core.js',
+    corePath: window.location.origin + '/lib/ffmpeg-core.js',
     progress: ({ ratio }) => setGlobalProgress(ratio),
   });
   await ffmpegInst.load();
