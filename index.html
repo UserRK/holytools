@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AudioTools — Конвертер · LUFS · Очистка мови</title>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+<style>
+:root {
+  --bg:      #09090f;
+  --s1:      #111120;
+  --s2:      #191928;
+  --s3:      #21213a;
+  --border:  rgba(255,255,255,0.07);
+  --accent:  #7c3aed;
+  --accent2: #6366f1;
+  --text:    #e2e2f0;
+  --muted:   #6868a0;
+  --ok:      #10b981;
+  --err:     #ef4444;
+  --radius:  0.9375rem;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:16px}
+
+/* ── OVERLAY ─────────────────────────────────────── */
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:999;display:none;flex-direction:column;align-items:center;justify-content:center;gap:1.125rem}
+#overlay.show{display:flex}
+.ov-spinner{width:52px;height:52px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+.ov-title{font-size:1.125rem;font-weight:600}
+.ov-sub{font-size:.9375rem;color:var(--muted)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── HEADER ──────────────────────────────────────── */
+header{
+  background:var(--s1);
+  border-bottom:1px solid var(--border);
+  padding:1.25rem 2.5rem;
+  display:flex;align-items:center;gap:2.5rem;flex-wrap:wrap;
+}
+.logo{
+  font-size:1.375rem;font-weight:800;letter-spacing:-.02em;
+  background:linear-gradient(135deg,#a78bfa 0%,#818cf8 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  white-space:nowrap;flex-shrink:0;
+}
+.tabs{display:flex;gap:.375rem}
+.tab{
+  padding:.625rem 1.375rem;border:none;border-radius:.625rem;
+  background:transparent;color:var(--muted);
+  font-size:1rem;font-weight:500;cursor:pointer;transition:all .15s;
+}
+.tab:hover{background:var(--s2);color:var(--text)}
+.tab.active{
+  background:var(--s2);color:var(--text);
+  box-shadow:inset 0 0 0 1px var(--border);
+}
+
+/* ── MAIN LAYOUT ─────────────────────────────────── */
+main{max-width:1520px;margin:0 auto;padding:2.25rem 2.5rem 3.5rem}
+
+.panel{display:none;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:2rem;align-items:start}
+.panel.active{display:grid}
+
+.col-left,.col-right{display:flex;flex-direction:column;gap:1.75rem}
+.col-right{position:sticky;top:1.5rem}
+
+.card{
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:2rem;
+}
+.card-title{
+  font-size:.75rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);margin-bottom:1.375rem;
+}
+
+/* ── DROP ZONE ───────────────────────────────────── */
+.drop{
+  border:2px dashed rgba(255,255,255,.12);
+  border-radius:var(--radius);
+  padding:4.5rem 2rem;
+  text-align:center;cursor:pointer;
+  transition:border-color .2s,background .2s;position:relative;
+}
+.drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop:hover,.drop.over{border-color:var(--accent);background:rgba(124,58,237,.07)}
+.drop-icon{margin-bottom:1rem}
+.drop-icon svg{opacity:.5;display:block;margin:0 auto}
+.drop-hint{font-size:1.1875rem;font-weight:500;color:var(--text);margin-bottom:.5rem}
+.drop-hint span{color:#a78bfa}
+.drop-types{font-size:.9375rem;color:var(--muted)}
+
+.file-row{
+  display:none;align-items:center;gap:1rem;
+  margin-top:1.25rem;background:var(--s2);
+  border-radius:.6875rem;padding:.875rem 1.25rem;
+}
+.file-row.show{display:flex}
+.file-row-name{font-size:1rem;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row-size{font-size:.875rem;color:var(--muted);white-space:nowrap}
+.file-clear{
+  background:none;border:none;color:var(--muted);
+  cursor:pointer;padding:.25rem .375rem;
+  font-size:1.375rem;line-height:1;transition:color .15s;flex-shrink:0;
+}
+.file-clear:hover{color:var(--err)}
+
+/* ── FORMAT GRID ─────────────────────────────────── */
+.fmt-grid{
+  display:grid;grid-template-columns:repeat(6,1fr);
+  gap:.625rem;margin-bottom:1.375rem;
+}
+.fmt-btn{
+  padding:.75rem .5rem;border:1px solid var(--border);
+  border-radius:.625rem;background:var(--s2);
+  color:var(--muted);font-size:1rem;font-weight:700;
+  letter-spacing:.03em;cursor:pointer;text-align:center;transition:all .15s;
+}
+.fmt-btn:hover{border-color:var(--accent2);color:var(--text);background:var(--s3)}
+.fmt-btn.sel{border-color:var(--accent);background:rgba(124,58,237,.18);color:var(--text)}
+
+/* ── SETTINGS ────────────────────────────────────── */
+.settings-row{display:flex;gap:1.125rem;flex-wrap:wrap}
+.sg{display:flex;flex-direction:column;gap:.5rem;flex:1;min-width:150px}
+.sg label{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+select,input[type=number]{
+  background:var(--s2);border:1px solid var(--border);
+  border-radius:.625rem;color:var(--text);
+  padding:.6875rem 1rem;font-size:1rem;
+  outline:none;transition:border-color .15s;width:100%;
+}
+select:focus,input[type=number]:focus{border-color:var(--accent)}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button{opacity:.4}
+select option{background:var(--s2)}
+
+/* ── PRESETS ─────────────────────────────────────── */
+.preset-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.preset{
+  padding:.5625rem 1rem;border:1px solid var(--border);
+  border-radius:.5rem;background:var(--s2);
+  color:var(--muted);font-size:.9375rem;font-weight:500;
+  cursor:pointer;transition:all .15s;text-align:center;line-height:1.5;
+}
+.preset small{font-size:.8125rem;color:var(--muted);display:block}
+.preset:hover,.preset.active{
+  border-color:var(--accent2);color:var(--text);
+  background:rgba(99,102,241,.14);
+}
+.preset.active small{color:#a5b4fc}
+
+/* ── STRENGTH ────────────────────────────────────── */
+.str-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.25rem}
+.str-btn{
+  padding:1.25rem .875rem;border:1px solid var(--border);
+  border-radius:.75rem;background:var(--s2);cursor:pointer;
+  text-align:center;transition:all .15s;
+}
+.str-btn:hover,.str-btn.sel{border-color:var(--accent);background:rgba(124,58,237,.14)}
+.str-name{font-size:1.0625rem;font-weight:600;color:var(--text);margin-bottom:.375rem}
+.str-desc{font-size:.875rem;color:var(--muted);line-height:1.4}
+
+/* ── CHECKBOX ────────────────────────────────────── */
+.chk-row{display:flex;align-items:center;gap:.625rem;cursor:pointer;font-size:.9375rem;color:var(--muted);user-select:none;padding:.25rem 0}
+.chk-row input{accent-color:var(--accent);cursor:pointer;width:17px;height:17px;flex-shrink:0}
+.chk-row:hover{color:var(--text)}
+.options-col{display:flex;flex-direction:column;gap:.875rem}
+
+/* ── RIGHT COLUMN CARD ───────────────────────────── */
+.result-card{display:flex;flex-direction:column;gap:1.5rem}
+
+/* Empty state */
+.empty-state{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:3rem 1.5rem;gap:1rem;
+  border:1.5px dashed rgba(255,255,255,.07);border-radius:.75rem;
+}
+.empty-state.hidden{display:none}
+.empty-icon svg{opacity:.2}
+.empty-text{font-size:1rem;color:var(--muted);text-align:center;line-height:1.5}
+
+/* Process button */
+.btn-process{
+  display:flex;align-items:center;justify-content:center;gap:.625rem;
+  width:100%;padding:1.125rem 2rem;border:none;border-radius:.75rem;
+  font-size:1.125rem;font-weight:700;cursor:pointer;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;transition:all .2s;letter-spacing:.01em;
+}
+.btn-process:hover{opacity:.9;transform:translateY(-2px);box-shadow:0 8px 24px rgba(124,58,237,.35)}
+.btn-process:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* ── PROGRESS ────────────────────────────────────── */
+.prog-wrap{display:none}
+.prog-wrap.show{display:block}
+.prog-track{height:5px;background:var(--s3);border-radius:3px;overflow:hidden;margin-bottom:.75rem}
+.prog-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s}
+.prog-fill.pulse{width:35%!important;animation:pulse-slide 1.4s ease-in-out infinite}
+@keyframes pulse-slide{0%{transform:translateX(-120%)}100%{transform:translateX(380%)}}
+.prog-label{font-size:.9375rem;color:var(--muted);text-align:center}
+
+/* ── RESULT ──────────────────────────────────────── */
+.result-wrap{display:none}
+.result-wrap.show{display:flex;flex-direction:column;gap:1rem}
+
+audio{width:100%;height:48px;accent-color:var(--accent)}
+video{width:100%;border-radius:.625rem;background:#000;display:block;max-height:340px}
+.sg-row{display:flex;gap:1.125rem;flex-wrap:wrap;margin-top:1.125rem}
+
+.stats-row{display:grid;grid-template-columns:repeat(2,1fr);gap:.875rem}
+.stat{background:var(--s2);border-radius:.75rem;padding:.875rem 1.125rem}
+.stat-label{font-size:.6875rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.375rem}
+.stat-val{font-size:1.25rem;font-weight:700}
+
+/* ── ALERT ───────────────────────────────────────── */
+.alert{display:none;padding:.875rem 1.125rem;border-radius:.625rem;font-size:.9375rem;line-height:1.5}
+.alert.show{display:block}
+.alert-err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#fca5a5}
+
+/* ── SECONDARY BUTTONS ───────────────────────────── */
+.btn-row{display:flex;gap:.75rem;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.625rem;border:none;border-radius:.625rem;font-size:1rem;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn-dl{background:linear-gradient(135deg,#059669,#10b981);color:#fff;flex:1}
+.btn-dl:hover{opacity:.9;transform:translateY(-1px)}
+.btn-again{background:var(--s2);border:1px solid var(--border);color:var(--muted)}
+.btn-again:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
+
+/* ── FOOTER ──────────────────────────────────────── */
+footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-size:.875rem;border-top:1px solid var(--border);margin-top:1rem}
+
+/* ── RESPONSIVE ──────────────────────────────────── */
+@media(max-width:1024px){
+  .panel{grid-template-columns:1fr}
+  .col-right{position:static}
+  main{padding:1.75rem 1.75rem 3rem}
+}
+@media(max-width:640px){
+  header{padding:1rem 1.25rem;gap:1rem}
+  .tab{padding:.5rem .875rem;font-size:.9375rem}
+  main{padding:1.25rem 1rem 2.5rem}
+  .card{padding:1.375rem}
+  .drop{padding:2.75rem 1rem}
+  .fmt-grid{grid-template-columns:repeat(3,1fr)}
+  .btn-row{flex-direction:column}
+  .btn{width:100%}
+}
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="ov-spinner"></div>
+  <div class="ov-title" id="ov-title">Завантаження FFmpeg…</div>
+  <div class="ov-sub" id="ov-sub">Перший запуск: ~20–60 с залежно від з'єднання</div>
+</div>
+
+<header>
+  <div class="logo">⬡ AudioTools</div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="converter">Конвертер</button>
+    <button class="tab" data-tab="normalizer">LUFS Нормалайзер</button>
+    <button class="tab" data-tab="cleaner">Очистка мови</button>
+    <button class="tab" data-tab="vconverter">Відео конвертер</button>
+    <button class="tab" data-tab="merge">Аудіореплейсер</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ══════════════════ CONVERTER ══════════════════ -->
+<section id="tab-converter" class="panel active">
+
+  <div class="col-left">
+    <div class="card">
+      <div class="card-title">Вхідний файл</div>
+      <div class="drop" id="cv-drop">
+        <input type="file" id="cv-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.wma,.opus,.aiff,.aif,.au">
+        <div class="drop-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="drop-hint"><span>Натисніть</span> або перетягніть аудіофайл</div>
+        <div class="drop-types">MP3 · WAV · FLAC · OGG · M4A · AAC · OPUS · WMA · AIFF</div>
+      </div>
+      <div class="file-row" id="cv-file-row">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="file-row-name" id="cv-file-name"></span>
+        <span class="file-row-size" id="cv-file-size"></span>
+        <button class="file-clear" id="cv-clear" title="Прибрати файл">×</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Формат виводу</div>
+      <div class="fmt-grid">
+        <button class="fmt-btn sel" data-fmt="mp3">MP3</button>
+        <button class="fmt-btn" data-fmt="wav">WAV</button>
+        <button class="fmt-btn" data-fmt="flac">FLAC</button>
+        <button class="fmt-btn" data-fmt="ogg">OGG</button>
+        <button class="fmt-btn" data-fmt="m4a">M4A</button>
+        <button class="fmt-btn" data-fmt="opus">OPUS</button>
+      </div>
+      <div class="settings-row">
+        <div class="sg" id="cv-bitrate-sg">
+          <label for="cv-bitrate">Бітрейт</label>
+          <select id="cv-bitrate">
+            <option value="96">96 kbps — Низька</option>
+            <option value="128">128 kbps — Стандартна</option>
+            <option value="192" selected>192 kbps — Висока</option>
+            <option value="256">256 kbps — Дуже висока</option>
+            <option value="320">320 kbps — Максимальна</option>
+          </select>
+        </div>
+        <div class="sg">
+          <label for="cv-samplerate">Частота дискретизації</label>
+          <select id="cv-samplerate">
+            <option value="">Без змін</option>
+            <option value="22050">22050 Hz</option>
+            <option value="44100">44100 Hz (CD)</option>
+            <option value="48000">48000 Hz (Pro)</option>
+            <option value="96000">96000 Hz (Hi-Res)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="card result-card">
+      <div class="card-title">Результат</div>
+
+      <div class="empty-state" id="cv-empty">
+        <div class="empty-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <polyline points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+        </div>
+        <div class="empty-text">Завантажте файл зліва<br>та натисніть «Конвертувати»</div>
+      </div>
+
+      <div class="prog-wrap" id="cv-prog">
+        <div class="prog-track"><div class="prog-fill pulse" id="cv-fill"></div></div>
+        <div class="prog-label" id="cv-prog-label">Обробка…</div>
+      </div>
+
+      <div class="result-wrap" id="cv-result">
+        <audio id="cv-audio" controls></audio>
+        <div class="btn-row">
+          <button class="btn btn-dl" id="cv-dl">Завантажити</button>
+          <button class="btn btn-again" id="cv-again">Ще раз</button>
+        </div>
+      </div>
+
+      <div class="alert alert-err" id="cv-err"></div>
+
+      <button class="btn-process" id="cv-btn" disabled>Конвертувати</button>
+    </div>
+  </div>
+
+</section>
+
+<!-- ══════════════════ NORMALIZER ══════════════════ -->
+<section id="tab-normalizer" class="panel">
+
+  <div class="col-left">
+    <div class="card">
+      <div class="card-title">Вхідний файл</div>
+      <div class="drop" id="nm-drop">
+        <input type="file" id="nm-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.wma,.opus,.aiff,.aif,.au">
+        <div class="drop-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="drop-hint"><span>Натисніть</span> або перетягніть аудіофайл</div>
+        <div class="drop-types">MP3 · WAV · FLAC · OGG · M4A · AAC · OPUS · WMA · AIFF</div>
+      </div>
+      <div class="file-row" id="nm-file-row">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="file-row-name" id="nm-file-name"></span>
+        <span class="file-row-size" id="nm-file-size"></span>
+        <button class="file-clear" id="nm-clear">×</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Параметри LUFS</div>
+      <div class="preset-row" id="nm-presets">
+        <button class="preset active" data-i="-14" data-tp="-1" data-lra="7">Spotify / YouTube<small>−14 LUFS</small></button>
+        <button class="preset" data-i="-16" data-tp="-1" data-lra="10">Apple Music<small>−16 LUFS</small></button>
+        <button class="preset" data-i="-23" data-tp="-1" data-lra="7">EBU R128<small>−23 LUFS</small></button>
+        <button class="preset" data-i="-24" data-tp="-2" data-lra="10">ATSC A/85<small>−24 LUFS</small></button>
+        <button class="preset" data-i="-18" data-tp="-2" data-lra="7">HolyVideo<small>−18 LUFS</small></button>
+      <button class="preset" data-custom>Власні</button>
+      </div>
+      <div class="settings-row">
+        <div class="sg">
+          <label for="nm-i">Гучність (LUFS)</label>
+          <input type="number" id="nm-i" value="-14" min="-40" max="-5" step="0.5">
+        </div>
+        <div class="sg">
+          <label for="nm-tp">True Peak (dBTP)</label>
+          <input type="number" id="nm-tp" value="-1" min="-9" max="-0.1" step="0.1">
+        </div>
+        <div class="sg">
+          <label for="nm-lra">LRA (LU)</label>
+          <input type="number" id="nm-lra" value="7" min="1" max="20" step="1">
+        </div>
+        <div class="sg">
+          <label for="nm-bitrate">Бітрейт виводу</label>
+          <select id="nm-bitrate">
+            <option value="128">128 kbps</option>
+            <option value="192" selected>192 kbps</option>
+            <option value="256">256 kbps</option>
+            <option value="320">320 kbps</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="card result-card">
+      <div class="card-title">Результат</div>
+
+      <div class="empty-state" id="nm-empty">
+        <div class="empty-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+        </div>
+        <div class="empty-text">Завантажте файл зліва<br>та натисніть «Нормалізувати»</div>
+      </div>
+
+      <div class="prog-wrap" id="nm-prog">
+        <div class="prog-track"><div class="prog-fill pulse" id="nm-fill"></div></div>
+        <div class="prog-label" id="nm-prog-label">Аналіз гучності (1/2)…</div>
+      </div>
+
+      <div class="result-wrap" id="nm-result">
+        <audio id="nm-audio" controls></audio>
+        <div class="stats-row" id="nm-stats"></div>
+        <div class="btn-row">
+          <button class="btn btn-dl" id="nm-dl">Завантажити</button>
+          <button class="btn btn-again" id="nm-again">Ще раз</button>
+        </div>
+      </div>
+
+      <div class="alert alert-err" id="nm-err"></div>
+
+      <button class="btn-process" id="nm-btn" disabled>Нормалізувати</button>
+    </div>
+  </div>
+
+</section>
+
+<!-- ══════════════════ CLEANER ══════════════════ -->
+<section id="tab-cleaner" class="panel">
+
+  <div class="col-left">
+    <div class="card">
+      <div class="card-title">Вхідний файл</div>
+      <div class="drop" id="cl-drop">
+        <input type="file" id="cl-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.wma,.opus,.aiff,.aif,.au">
+        <div class="drop-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="drop-hint"><span>Натисніть</span> або перетягніть аудіофайл</div>
+        <div class="drop-types">MP3 · WAV · FLAC · OGG · M4A · AAC · OPUS · WMA · AIFF</div>
+      </div>
+      <div class="file-row" id="cl-file-row">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="file-row-name" id="cl-file-name"></span>
+        <span class="file-row-size" id="cl-file-size"></span>
+        <button class="file-clear" id="cl-clear">×</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Рівень очистки</div>
+      <div class="str-grid">
+        <div class="str-btn" data-str="light">
+          <div class="str-name">Легке</div>
+          <div class="str-desc">Слабкий шум, легкі артефакти</div>
+        </div>
+        <div class="str-btn sel" data-str="medium">
+          <div class="str-name">Середнє</div>
+          <div class="str-desc">Кімнатний шум, HVAC, гул</div>
+        </div>
+        <div class="str-btn" data-str="strong">
+          <div class="str-name">Сильне</div>
+          <div class="str-desc">Сильний фоновий шум</div>
+        </div>
+      </div>
+      <div class="options-col">
+        <label class="chk-row">
+          <input type="checkbox" id="cl-hp" checked>
+          Прибрати низькочастотний гул (high-pass 80 Hz)
+        </label>
+        <label class="chk-row">
+          <input type="checkbox" id="cl-norm">
+          Нормалізувати гучність після очистки (−14 LUFS)
+        </label>
+      </div>
+      <div class="settings-row" style="margin-top:1rem">
+        <div class="sg">
+          <label for="cl-bitrate">Бітрейт виводу</label>
+          <select id="cl-bitrate">
+            <option value="128">128 kbps</option>
+            <option value="192" selected>192 kbps</option>
+            <option value="256">256 kbps</option>
+            <option value="320">320 kbps</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="card result-card">
+      <div class="card-title">Результат</div>
+
+      <div class="empty-state" id="cl-empty">
+        <div class="empty-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+            <path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <div class="empty-text">Завантажте файл зліва<br>та натисніть «Очистити»</div>
+      </div>
+
+      <div class="prog-wrap" id="cl-prog">
+        <div class="prog-track"><div class="prog-fill pulse" id="cl-fill"></div></div>
+        <div class="prog-label" id="cl-prog-label">Обробка…</div>
+      </div>
+
+      <div class="result-wrap" id="cl-result">
+        <audio id="cl-audio" controls></audio>
+        <div class="btn-row">
+          <button class="btn btn-dl" id="cl-dl">Завантажити</button>
+          <button class="btn btn-again" id="cl-again">Ще раз</button>
+        </div>
+      </div>
+
+      <div class="alert alert-err" id="cl-err"></div>
+
+      <button class="btn-process" id="cl-btn" disabled>Очистити</button>
+    </div>
+  </div>
+
+</section>
+
+<!-- ══════════════════ VIDEO CONVERTER ══════════════════ -->
+<section id="tab-vconverter" class="panel">
+
+  <div class="col-left">
+    <div class="card">
+      <div class="card-title">Вхідний відеофайл</div>
+      <div class="drop" id="vc-drop">
+        <input type="file" id="vc-input" accept=".mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v,.3gp">
+        <div class="drop-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 9 16 12 10 15 10 9"/>
+          </svg>
+        </div>
+        <div class="drop-hint"><span>Натисніть</span> або перетягніть відеофайл</div>
+        <div class="drop-types">MP4 · MOV · AVI · MKV · WebM · FLV · WMV</div>
+      </div>
+      <div class="file-row" id="vc-file-row">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 9 16 12 10 15 10 9"/></svg>
+        <span class="file-row-name" id="vc-file-name"></span>
+        <span class="file-row-size" id="vc-file-size"></span>
+        <button class="file-clear" id="vc-clear">×</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Формат виводу</div>
+      <div class="fmt-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.375rem">
+        <button class="fmt-btn sel" data-vfmt="mp4">MP4</button>
+        <button class="fmt-btn" data-vfmt="webm">WebM</button>
+        <button class="fmt-btn" data-vfmt="mkv">MKV</button>
+        <button class="fmt-btn" data-vfmt="mov">MOV</button>
+      </div>
+      <div class="settings-row">
+        <div class="sg">
+          <label for="vc-quality">Якість відео</label>
+          <select id="vc-quality">
+            <option value="copy">Без перекодування (копія)</option>
+            <optgroup label="За якістю (CRF)">
+              <option value="28">CRF 28 — Швидко</option>
+              <option value="23" selected>CRF 23 — Збалансовано</option>
+              <option value="18">CRF 18 — Якісно</option>
+            </optgroup>
+            <optgroup label="За бітрейтом (CBR)">
+              <option value="br:1000">1 Mbps</option>
+              <option value="br:2000">2 Mbps</option>
+              <option value="br:4000">4 Mbps</option>
+              <option value="br:8000">8 Mbps</option>
+              <option value="br:16000">16 Mbps</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="sg">
+          <label for="vc-scale">Роздільність</label>
+          <select id="vc-scale">
+            <option value="">Без змін</option>
+            <option value="1920">1080p</option>
+            <option value="1280">720p</option>
+            <option value="854">480p</option>
+            <option value="640">360p</option>
+          </select>
+        </div>
+      </div>
+      <div class="sg-row">
+        <div class="sg">
+          <label for="vc-abitrate">Аудіо</label>
+          <select id="vc-abitrate">
+            <option value="copy">Без змін</option>
+            <option value="192" selected>192 kbps</option>
+            <option value="128">128 kbps</option>
+            <option value="256">256 kbps</option>
+            <option value="mute">Вимкнути аудіо</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="card result-card">
+      <div class="card-title">Результат</div>
+      <div class="empty-state" id="vc-empty">
+        <div class="empty-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 9 16 12 10 15 10 9"/>
+          </svg>
+        </div>
+        <div class="empty-text">Завантажте відео зліва<br>та натисніть «Конвертувати»</div>
+      </div>
+      <div class="prog-wrap" id="vc-prog">
+        <div class="prog-track"><div class="prog-fill pulse" id="vc-fill"></div></div>
+        <div class="prog-label" id="vc-prog-label">Обробка…</div>
+      </div>
+      <div class="result-wrap" id="vc-result">
+        <video id="vc-video" controls></video>
+        <div class="btn-row">
+          <button class="btn btn-dl" id="vc-dl">Завантажити</button>
+          <button class="btn btn-again" id="vc-again">Ще раз</button>
+        </div>
+      </div>
+      <div class="alert alert-err" id="vc-err"></div>
+      <button class="btn-process" id="vc-btn" disabled>Конвертувати відео</button>
+    </div>
+  </div>
+
+</section>
+
+<!-- ══════════════════ АУДІОРЕПЛЕЙСЕР ══════════════════ -->
+<section id="tab-merge" class="panel">
+
+  <div class="col-left">
+    <div class="card">
+      <div class="card-title">Відеофайл</div>
+      <div class="drop" id="mg-v-drop">
+        <input type="file" id="mg-v-input" accept=".mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v">
+        <div class="drop-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 9 16 12 10 15 10 9"/>
+          </svg>
+        </div>
+        <div class="drop-hint"><span>Натисніть</span> або перетягніть відеофайл</div>
+        <div class="drop-types">MP4 · MOV · AVI · MKV · WebM</div>
+      </div>
+      <div class="file-row" id="mg-v-file-row">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 9 16 12 10 15 10 9"/></svg>
+        <span class="file-row-name" id="mg-v-file-name"></span>
+        <span class="file-row-size" id="mg-v-file-size"></span>
+        <button class="file-clear" id="mg-v-clear">×</button>
+      </div>
+      <video id="mg-v-preview" controls style="display:none;margin-top:1rem"></video>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Аудіо мікс</div>
+      <div class="drop" id="mg-a-drop">
+        <input type="file" id="mg-a-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.aiff,.aif">
+        <div class="drop-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+          </svg>
+        </div>
+        <div class="drop-hint"><span>Натисніть</span> або перетягніть аудіофайл</div>
+        <div class="drop-types">MP3 · WAV · FLAC · OGG · M4A · AAC · OPUS</div>
+      </div>
+      <div class="file-row" id="mg-a-file-row">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="file-row-name" id="mg-a-file-name"></span>
+        <span class="file-row-size" id="mg-a-file-size"></span>
+        <button class="file-clear" id="mg-a-clear">×</button>
+      </div>
+      <audio id="mg-a-preview" controls style="display:none;margin-top:1rem"></audio>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="card result-card">
+      <div class="card-title">Результат</div>
+      <div class="empty-state" id="mg-empty">
+        <div class="empty-icon">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.25">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10 9 16 12 10 15 10 9"/>
+            <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+        </div>
+        <div class="empty-text">Завантажте відео та аудіо зліва<br>і натисніть «Замінити аудіо»</div>
+      </div>
+      <div class="prog-wrap" id="mg-prog">
+        <div class="prog-track"><div class="prog-fill pulse" id="mg-fill"></div></div>
+        <div class="prog-label" id="mg-prog-label">Обробка…</div>
+      </div>
+      <div class="result-wrap" id="mg-result">
+        <video id="mg-video" controls></video>
+        <div class="btn-row">
+          <button class="btn btn-dl" id="mg-dl">Завантажити</button>
+          <button class="btn btn-again" id="mg-again">Ще раз</button>
+        </div>
+      </div>
+      <div class="alert alert-err" id="mg-err"></div>
+      <button class="btn-process" id="mg-btn" disabled>Замінити аудіо</button>
+    </div>
+  </div>
+
+</section>
+
+</main>
+<footer>Всі операції виконуються локально у браузері — файли нікуди не надсилаються</footer>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  FFmpeg singleton
+// ═══════════════════════════════════════════════════
+const { createFFmpeg, fetchFile } = FFmpeg;
+let ffmpegInst = null;
+let ffmpegLoading = false;
+let ffmpegBusy = false;
+
+async function getFFmpeg() {
+  if (ffmpegInst) return ffmpegInst;
+  if (ffmpegLoading) {
+    while (ffmpegLoading) await sleep(80);
+    return ffmpegInst;
+  }
+  ffmpegLoading = true;
+  showOverlay('Завантаження FFmpeg…', 'Перший запуск: ~20–60 с');
+  ffmpegInst = createFFmpeg({
+    log: false,
+    corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    progress: ({ ratio }) => setGlobalProgress(ratio),
+  });
+  await ffmpegInst.load();
+  ffmpegLoading = false;
+  hideOverlay();
+  return ffmpegInst;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ═══════════════════════════════════════════════════
+//  Overlay
+// ═══════════════════════════════════════════════════
+function showOverlay(title, sub) {
+  document.getElementById('ov-title').textContent = title;
+  document.getElementById('ov-sub').textContent   = sub || '';
+  document.getElementById('overlay').classList.add('show');
+}
+function hideOverlay() {
+  document.getElementById('overlay').classList.remove('show');
+}
+let _globalProgressRatio = 0;
+function setGlobalProgress(r) { _globalProgressRatio = r; }
+
+// ═══════════════════════════════════════════════════
+//  Utilities
+// ═══════════════════════════════════════════════════
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function ext(filename)  { return filename.split('.').pop().toLowerCase(); }
+function mimeOf(e) {
+  return { mp3:'audio/mpeg', wav:'audio/wav', flac:'audio/flac',
+           ogg:'audio/ogg', m4a:'audio/mp4', opus:'audio/ogg' }[e] || 'audio/mpeg';
+}
+function stem(filename) { return filename.replace(/\.[^/.]+$/, ''); }
+
+// ═══════════════════════════════════════════════════
+//  Drop zone setup
+// ═══════════════════════════════════════════════════
+function setupDrop(dropId, inputId, fileRowId, nameId, sizeId, clearId, onFile) {
+  const drop   = document.getElementById(dropId);
+  const input  = document.getElementById(inputId);
+  const row    = document.getElementById(fileRowId);
+  const nameEl = document.getElementById(nameId);
+  const sizeEl = document.getElementById(sizeId);
+  const clrEl  = document.getElementById(clearId);
+
+  function setFile(file) {
+    if (!file) return;
+    nameEl.textContent = file.name;
+    sizeEl.textContent = fmtBytes(file.size);
+    row.classList.add('show');
+    onFile(file);
+  }
+
+  input.addEventListener('change', () => setFile(input.files[0]));
+  drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', ()  => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+  clrEl.addEventListener('click', e => {
+    e.stopPropagation();
+    row.classList.remove('show');
+    input.value = '';
+    onFile(null);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  Progress / result helpers
+// ═══════════════════════════════════════════════════
+function showProg(p, label) {
+  const emptyEl = document.getElementById(`${p}-empty`);
+  if (emptyEl) emptyEl.classList.add('hidden');
+  document.getElementById(`${p}-prog`).classList.add('show');
+  document.getElementById(`${p}-prog-label`).textContent = label || 'Обробка…';
+  document.getElementById(`${p}-fill`).classList.add('pulse');
+  document.getElementById(`${p}-result`).classList.remove('show');
+  document.getElementById(`${p}-err`).classList.remove('show');
+}
+function setProg(p, ratio, label) {
+  const fill = document.getElementById(`${p}-fill`);
+  fill.classList.remove('pulse');
+  fill.style.width = Math.round(ratio * 100) + '%';
+  if (label) document.getElementById(`${p}-prog-label`).textContent = label;
+}
+function hideProg(p) {
+  document.getElementById(`${p}-prog`).classList.remove('show');
+}
+function showErr(p, msg) {
+  hideProg(p);
+  const emptyEl = document.getElementById(`${p}-empty`);
+  if (emptyEl) emptyEl.classList.add('hidden');
+  const el = document.getElementById(`${p}-err`);
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function showResult(p, blob, filename, stats) {
+  hideProg(p);
+  const emptyEl = document.getElementById(`${p}-empty`);
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  const audioEl = document.getElementById(`${p}-audio`);
+  if (audioEl._prevUrl) URL.revokeObjectURL(audioEl._prevUrl);
+  const url = URL.createObjectURL(blob);
+  audioEl._prevUrl = url;
+  audioEl.src = url;
+
+  document.getElementById(`${p}-dl`).onclick = () => {
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+  };
+
+  const statsRow = document.getElementById(`${p}-stats`);
+  if (statsRow && stats) {
+    statsRow.innerHTML = stats.map(s =>
+      `<div class="stat"><div class="stat-label">${s.label}</div><div class="stat-val">${s.val}</div></div>`
+    ).join('');
+  }
+  document.getElementById(`${p}-result`).classList.add('show');
+}
+
+// ═══════════════════════════════════════════════════
+//  Tab navigation
+// ═══════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ═══════════════════════════════════════════════════
+//  ── CONVERTER ──
+// ═══════════════════════════════════════════════════
+let cvFile = null, cvFmt = 'mp3';
+
+setupDrop('cv-drop','cv-input','cv-file-row','cv-file-name','cv-file-size','cv-clear', f => {
+  cvFile = f;
+  document.getElementById('cv-btn').disabled = !f;
+  document.getElementById('cv-result').classList.remove('show');
+  document.getElementById('cv-err').classList.remove('show');
+  if (f) document.getElementById('cv-empty').classList.remove('hidden');
+});
+
+document.querySelectorAll('.fmt-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.fmt-btn').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    cvFmt = btn.dataset.fmt;
+    document.getElementById('cv-bitrate-sg').style.display =
+      ['wav','flac'].includes(cvFmt) ? 'none' : '';
+  });
+});
+
+document.getElementById('cv-again').addEventListener('click', () => {
+  document.getElementById('cv-result').classList.remove('show');
+  document.getElementById('cv-empty').classList.remove('hidden');
+});
+
+document.getElementById('cv-btn').addEventListener('click', async () => {
+  if (!cvFile || ffmpegBusy) return;
+  ffmpegBusy = true;
+  const btn = document.getElementById('cv-btn');
+  btn.disabled = true;
+  showProg('cv', 'Ініціалізація…');
+  try {
+    const ff = await getFFmpeg();
+    const bitrate = document.getElementById('cv-bitrate').value;
+    const sr      = document.getElementById('cv-samplerate').value;
+    const inExt   = ext(cvFile.name);
+    const inName  = 'cv_in.' + inExt;
+    const outName = 'cv_out.' + cvFmt;
+
+    showProg('cv', 'Завантаження файлу…');
+    ff.FS('writeFile', inName, await fetchFile(cvFile));
+
+    const ticker = setInterval(() =>
+      setProg('cv', _globalProgressRatio, `Конвертація… ${Math.round(_globalProgressRatio*100)}%`), 200);
+
+    const args = ['-i', inName];
+    if (sr) args.push('-ar', sr);
+    switch (cvFmt) {
+      case 'mp3':  args.push('-c:a','libmp3lame','-b:a', bitrate+'k'); break;
+      case 'wav':  args.push('-c:a','pcm_s16le'); break;
+      case 'flac': args.push('-c:a','flac'); break;
+      case 'ogg':  args.push('-c:a','libvorbis','-b:a', bitrate+'k'); break;
+      case 'm4a':  args.push('-c:a','aac','-b:a', bitrate+'k'); break;
+      case 'opus': args.push('-c:a','libopus','-b:a', Math.min(+bitrate,128)+'k'); break;
+    }
+    args.push(outName);
+
+    await ff.run(...args);
+    clearInterval(ticker);
+
+    const data = ff.FS('readFile', outName);
+    const blob = new Blob([data.buffer], { type: mimeOf(cvFmt) });
+    try { ff.FS('unlink', inName); } catch(e) {}
+    try { ff.FS('unlink', outName); } catch(e) {}
+
+    showResult('cv', blob, stem(cvFile.name) + '.' + cvFmt);
+  } catch(e) {
+    showErr('cv', 'Помилка: ' + e.message);
+    console.error(e);
+  }
+  ffmpegBusy = false;
+  btn.disabled = !cvFile;
+});
+
+// ═══════════════════════════════════════════════════
+//  ── LUFS NORMALIZER ──
+// ═══════════════════════════════════════════════════
+let nmFile = null;
+
+setupDrop('nm-drop','nm-input','nm-file-row','nm-file-name','nm-file-size','nm-clear', f => {
+  nmFile = f;
+  document.getElementById('nm-btn').disabled = !f;
+  document.getElementById('nm-result').classList.remove('show');
+  document.getElementById('nm-err').classList.remove('show');
+  if (f) document.getElementById('nm-empty').classList.remove('hidden');
+});
+
+document.querySelectorAll('#nm-presets .preset').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('#nm-presets .preset').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    if (!p.hasAttribute('data-custom')) {
+      document.getElementById('nm-i').value   = p.dataset.i;
+      document.getElementById('nm-tp').value  = p.dataset.tp;
+      document.getElementById('nm-lra').value = p.dataset.lra;
+    }
+  });
+});
+
+document.getElementById('nm-again').addEventListener('click', () => {
+  document.getElementById('nm-result').classList.remove('show');
+  document.getElementById('nm-empty').classList.remove('hidden');
+});
+
+document.getElementById('nm-btn').addEventListener('click', async () => {
+  if (!nmFile || ffmpegBusy) return;
+  ffmpegBusy = true;
+  const btn = document.getElementById('nm-btn');
+  btn.disabled = true;
+
+  const I   = parseFloat(document.getElementById('nm-i').value)   || -14;
+  const TP  = parseFloat(document.getElementById('nm-tp').value)  || -1;
+  const LRA = parseFloat(document.getElementById('nm-lra').value) || 7;
+
+  showProg('nm', 'Аналіз гучності (1/2)…');
+  try {
+    const ff = await getFFmpeg();
+    const inExt   = ext(nmFile.name);
+    const inName  = 'nm_in.' + inExt;
+    const outName = 'nm_out.' + inExt;
+    const nullOut = 'loudnorm_null.tmp';
+
+    ff.FS('writeFile', inName, await fetchFile(nmFile));
+
+    const logs = [];
+    ff.setLogger(({ type, message }) => { if (type === 'fferr') logs.push(message); });
+
+    // Pass 1 — measure
+    await ff.run(
+      '-i', inName,
+      '-af', `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}:print_format=json`,
+      '-f', 'null', nullOut
+    );
+    try { ff.FS('unlink', nullOut); } catch(e) {}
+
+    const logTxt   = logs.join('\n');
+    const jsonStart = logTxt.indexOf('"input_i"');
+    if (jsonStart === -1) throw new Error('Не вдалося зчитати метадані гучності. Спробуйте WAV або MP3.');
+    const braceS = logTxt.lastIndexOf('{', jsonStart);
+    const braceE = logTxt.indexOf('}', jsonStart);
+    const stats  = JSON.parse(logTxt.slice(braceS, braceE + 1));
+
+    // Pass 2 — apply
+    showProg('nm', 'Нормалізація (2/2)…');
+    const filter = [
+      `loudnorm=I=${I}:TP=${TP}:LRA=${LRA}`,
+      `measured_I=${stats.input_i}`,
+      `measured_TP=${stats.input_tp}`,
+      `measured_LRA=${stats.input_lra}`,
+      `measured_thresh=${stats.input_thresh}`,
+      `offset=${stats.target_offset}`,
+      `linear=true`,
+    ].join(':');
+
+    const nmBr  = document.getElementById('nm-bitrate').value;
+    const args2 = ['-i', inName, '-af', filter, '-ar', '48000'];
+    if      (inExt === 'mp3')  args2.push('-c:a','libmp3lame','-b:a', nmBr+'k');
+    else if (inExt === 'ogg')  args2.push('-c:a','libvorbis','-b:a', nmBr+'k');
+    else if (inExt === 'm4a')  args2.push('-c:a','aac','-b:a', nmBr+'k');
+    else if (inExt === 'opus') args2.push('-c:a','libopus','-b:a', nmBr+'k');
+    else if (inExt === 'flac') args2.push('-c:a','flac');
+    args2.push(outName);
+
+    const ticker = setInterval(() => setProg('nm', _globalProgressRatio), 200);
+    await ff.run(...args2);
+    clearInterval(ticker);
+
+    const data = ff.FS('readFile', outName);
+    const blob = new Blob([data.buffer], { type: mimeOf(inExt) });
+    try { ff.FS('unlink', inName); } catch(e) {}
+    try { ff.FS('unlink', outName); } catch(e) {}
+
+    ff.setLogger(() => {});
+
+    showResult('nm', blob, stem(nmFile.name) + '_normalized.' + inExt, [
+      { label: 'Вихідна гучність',    val: parseFloat(stats.input_i).toFixed(1) + ' LUFS' },
+      { label: 'Нова гучність',        val: parseFloat(stats.output_i || I).toFixed(1) + ' LUFS' },
+      { label: 'True Peak (вхідний)', val: parseFloat(stats.input_tp).toFixed(1) + ' dBTP' },
+      { label: 'True Peak (цільовий)',val: TP + ' dBTP' },
+    ]);
+  } catch(e) {
+    if (ffmpegInst) ffmpegInst.setLogger(() => {});
+    showErr('nm', 'Помилка: ' + e.message);
+    console.error(e);
+  }
+  ffmpegBusy = false;
+  btn.disabled = !nmFile;
+});
+
+// ═══════════════════════════════════════════════════
+//  ── SPEECH CLEANER ──
+// ═══════════════════════════════════════════════════
+let clFile = null, clStr = 'medium';
+
+setupDrop('cl-drop','cl-input','cl-file-row','cl-file-name','cl-file-size','cl-clear', f => {
+  clFile = f;
+  document.getElementById('cl-btn').disabled = !f;
+  document.getElementById('cl-result').classList.remove('show');
+  document.getElementById('cl-err').classList.remove('show');
+  if (f) document.getElementById('cl-empty').classList.remove('hidden');
+});
+
+document.querySelectorAll('.str-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.str-btn').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    clStr = btn.dataset.str;
+  });
+});
+
+document.getElementById('cl-again').addEventListener('click', () => {
+  document.getElementById('cl-result').classList.remove('show');
+  document.getElementById('cl-empty').classList.remove('hidden');
+});
+
+document.getElementById('cl-btn').addEventListener('click', async () => {
+  if (!clFile || ffmpegBusy) return;
+  ffmpegBusy = true;
+  const btn = document.getElementById('cl-btn');
+  btn.disabled = true;
+  showProg('cl', 'Обробка…');
+
+  const strengths = { light:{nf:-40,nr:20}, medium:{nf:-30,nr:40}, strong:{nf:-20,nr:60} };
+  const { nf, nr } = strengths[clStr];
+  const hp     = document.getElementById('cl-hp').checked;
+  const doNorm = document.getElementById('cl-norm').checked;
+
+  try {
+    const ff = await getFFmpeg();
+    const inExt   = ext(clFile.name);
+    const inName  = 'cl_in.' + inExt;
+    const outName = 'cl_out.' + inExt;
+
+    ff.FS('writeFile', inName, await fetchFile(clFile));
+
+    const filters = [];
+    if (hp)     filters.push('highpass=f=80');
+    filters.push(`afftdn=nf=${nf}:nr=${nr}`);
+    if (doNorm) filters.push('loudnorm=I=-14:TP=-1:LRA=7');
+
+    const clBr = document.getElementById('cl-bitrate').value;
+    const args = ['-i', inName, '-af', filters.join(',')];
+    if      (inExt === 'mp3')  args.push('-c:a','libmp3lame','-b:a', clBr+'k');
+    else if (inExt === 'ogg')  args.push('-c:a','libvorbis','-b:a', clBr+'k');
+    else if (inExt === 'm4a')  args.push('-c:a','aac','-b:a', clBr+'k');
+    else if (inExt === 'opus') args.push('-c:a','libopus','-b:a', clBr+'k');
+    else if (inExt === 'flac') args.push('-c:a','flac');
+    args.push(outName);
+
+    const ticker = setInterval(() => setProg('cl', _globalProgressRatio), 200);
+    await ff.run(...args);
+    clearInterval(ticker);
+
+    const data = ff.FS('readFile', outName);
+    const blob = new Blob([data.buffer], { type: mimeOf(inExt) });
+    try { ff.FS('unlink', inName); } catch(e) {}
+    try { ff.FS('unlink', outName); } catch(e) {}
+
+    showResult('cl', blob, stem(clFile.name) + '_clean.' + inExt);
+  } catch(e) {
+    showErr('cl', 'Помилка: ' + e.message);
+    console.error(e);
+  }
+  ffmpegBusy = false;
+  btn.disabled = !clFile;
+});
+
+// ═══════════════════════════════════════════════════
+//  Video utilities
+// ═══════════════════════════════════════════════════
+function videoMimeOf(e) {
+  return { mp4:'video/mp4', webm:'video/webm', mkv:'video/x-matroska',
+           mov:'video/quicktime', avi:'video/x-msvideo' }[e] || 'video/mp4';
+}
+
+function showResultVideo(p, blob, filename) {
+  hideProg(p);
+  const emptyEl = document.getElementById(`${p}-empty`);
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  const videoEl = document.getElementById(`${p}-video`);
+  if (videoEl._prevUrl) URL.revokeObjectURL(videoEl._prevUrl);
+  const url = URL.createObjectURL(blob);
+  videoEl._prevUrl = url;
+  videoEl.src = url;
+
+  document.getElementById(`${p}-dl`).onclick = () => {
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+  };
+  document.getElementById(`${p}-result`).classList.add('show');
+}
+
+// ═══════════════════════════════════════════════════
+//  ── VIDEO CONVERTER ──
+// ═══════════════════════════════════════════════════
+let vcFile = null, vcFmt = 'mp4';
+
+setupDrop('vc-drop','vc-input','vc-file-row','vc-file-name','vc-file-size','vc-clear', f => {
+  vcFile = f;
+  document.getElementById('vc-btn').disabled = !f;
+  document.getElementById('vc-result').classList.remove('show');
+  document.getElementById('vc-err').classList.remove('show');
+  if (f) document.getElementById('vc-empty').classList.remove('hidden');
+});
+
+document.querySelectorAll('[data-vfmt]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-vfmt]').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    vcFmt = btn.dataset.vfmt;
+  });
+});
+
+document.getElementById('vc-again').addEventListener('click', () => {
+  document.getElementById('vc-result').classList.remove('show');
+  document.getElementById('vc-empty').classList.remove('hidden');
+});
+
+document.getElementById('vc-btn').addEventListener('click', async () => {
+  if (!vcFile || ffmpegBusy) return;
+  ffmpegBusy = true;
+  const btn = document.getElementById('vc-btn');
+  btn.disabled = true;
+  showProg('vc', 'Ініціалізація…');
+  try {
+    const ff      = await getFFmpeg();
+    const quality = document.getElementById('vc-quality').value;
+    const scale   = document.getElementById('vc-scale').value;
+    const abr     = document.getElementById('vc-abitrate').value;
+    const inExt   = ext(vcFile.name);
+    const inName  = 'vc_in.' + inExt;
+    const outName = 'vc_out.' + vcFmt;
+
+    showProg('vc', 'Завантаження файлу…');
+    ff.FS('writeFile', inName, await fetchFile(vcFile));
+
+    const ticker = setInterval(() =>
+      setProg('vc', _globalProgressRatio, `Конвертація… ${Math.round(_globalProgressRatio * 100)}%`), 200);
+
+    const args = ['-i', inName];
+
+    // Video codec
+    if (quality === 'copy') {
+      args.push('-c:v', 'copy');
+    } else if (quality.startsWith('br:')) {
+      const vbr = quality.slice(3);
+      if (vcFmt === 'webm') {
+        args.push('-c:v', 'libvpx-vp9', '-b:v', vbr + 'k');
+      } else {
+        args.push('-c:v', 'libx264', '-b:v', vbr + 'k', '-preset', 'fast');
+        if (vcFmt === 'mp4') args.push('-movflags', '+faststart');
+      }
+    } else {
+      if (vcFmt === 'webm') {
+        args.push('-c:v', 'libvpx-vp9', '-crf', quality, '-b:v', '0');
+      } else {
+        args.push('-c:v', 'libx264', '-crf', quality, '-preset', 'fast');
+        if (vcFmt === 'mp4') args.push('-movflags', '+faststart');
+      }
+    }
+
+    // Scale (only when re-encoding)
+    if (scale && quality !== 'copy') {
+      args.push('-vf', `scale=${scale}:-2`);
+    }
+
+    // Audio
+    if (abr === 'mute') {
+      args.push('-an');
+    } else if (abr === 'copy') {
+      args.push('-c:a', 'copy');
+    } else if (vcFmt === 'webm') {
+      args.push('-c:a', 'libopus', '-b:a', abr + 'k');
+    } else {
+      args.push('-c:a', 'aac', '-b:a', abr + 'k');
+    }
+
+    args.push(outName);
+
+    await ff.run(...args);
+    clearInterval(ticker);
+
+    const data = ff.FS('readFile', outName);
+    const blob = new Blob([data.buffer], { type: videoMimeOf(vcFmt) });
+    try { ff.FS('unlink', inName); } catch(e) {}
+    try { ff.FS('unlink', outName); } catch(e) {}
+
+    showResultVideo('vc', blob, stem(vcFile.name) + '.' + vcFmt);
+  } catch(e) {
+    showErr('vc', 'Помилка: ' + e.message);
+    console.error(e);
+  }
+  ffmpegBusy = false;
+  btn.disabled = !vcFile;
+});
+
+// ═══════════════════════════════════════════════════
+//  ── АУДІОРЕПЛЕЙСЕР ──
+// ═══════════════════════════════════════════════════
+let mgVideo = null, mgAudio = null;
+
+function updateMgBtn() {
+  document.getElementById('mg-btn').disabled = !(mgVideo && mgAudio);
+}
+
+setupDrop('mg-v-drop','mg-v-input','mg-v-file-row','mg-v-file-name','mg-v-file-size','mg-v-clear', f => {
+  mgVideo = f;
+  updateMgBtn();
+  document.getElementById('mg-result').classList.remove('show');
+  document.getElementById('mg-err').classList.remove('show');
+  if (f) document.getElementById('mg-empty').classList.remove('hidden');
+  const vPrev = document.getElementById('mg-v-preview');
+  if (vPrev._prevUrl) { URL.revokeObjectURL(vPrev._prevUrl); vPrev._prevUrl = null; }
+  if (f) {
+    const url = URL.createObjectURL(f);
+    vPrev._prevUrl = url;
+    vPrev.src = url;
+    vPrev.style.display = '';
+  } else {
+    vPrev.src = '';
+    vPrev.style.display = 'none';
+  }
+});
+
+setupDrop('mg-a-drop','mg-a-input','mg-a-file-row','mg-a-file-name','mg-a-file-size','mg-a-clear', f => {
+  mgAudio = f;
+  updateMgBtn();
+  document.getElementById('mg-result').classList.remove('show');
+  document.getElementById('mg-err').classList.remove('show');
+  const aPrev = document.getElementById('mg-a-preview');
+  if (aPrev._prevUrl) { URL.revokeObjectURL(aPrev._prevUrl); aPrev._prevUrl = null; }
+  if (f) {
+    const url = URL.createObjectURL(f);
+    aPrev._prevUrl = url;
+    aPrev.src = url;
+    aPrev.style.display = '';
+  } else {
+    aPrev.src = '';
+    aPrev.style.display = 'none';
+  }
+});
+
+document.getElementById('mg-again').addEventListener('click', () => {
+  document.getElementById('mg-result').classList.remove('show');
+  document.getElementById('mg-empty').classList.remove('hidden');
+});
+
+document.getElementById('mg-btn').addEventListener('click', async () => {
+  if (!mgVideo || !mgAudio || ffmpegBusy) return;
+  ffmpegBusy = true;
+  const btn = document.getElementById('mg-btn');
+  btn.disabled = true;
+  showProg('mg', 'Завантаження файлів…');
+  try {
+    const ff      = await getFFmpeg();
+    const vExt    = ext(mgVideo.name);
+    const aExt    = ext(mgAudio.name);
+    const outExt  = ['mp4','mov','mkv','webm'].includes(vExt) ? vExt : 'mp4';
+    const vName   = 'mg_v.' + vExt;
+    const aName   = 'mg_a.' + aExt;
+    const outName = 'mg_out.' + outExt;
+
+    ff.FS('writeFile', vName, await fetchFile(mgVideo));
+    ff.FS('writeFile', aName, await fetchFile(mgAudio));
+
+    const ticker = setInterval(() =>
+      setProg('mg', _globalProgressRatio, `Обробка… ${Math.round(_globalProgressRatio * 100)}%`), 200);
+
+    const args = [
+      '-i', vName, '-i', aName,
+      '-c:v', 'copy',
+      '-c:a', 'aac', '-b:a', '192k',
+      '-map', '0:v:0', '-map', '1:a:0',
+      '-shortest',
+    ];
+    if (outExt === 'mp4') args.push('-movflags', '+faststart');
+    args.push(outName);
+
+    await ff.run(...args);
+    clearInterval(ticker);
+
+    const data = ff.FS('readFile', outName);
+    const blob = new Blob([data.buffer], { type: videoMimeOf(outExt) });
+    try { ff.FS('unlink', vName); } catch(e) {}
+    try { ff.FS('unlink', aName); } catch(e) {}
+    try { ff.FS('unlink', outName); } catch(e) {}
+
+    showResultVideo('mg', blob, stem(mgVideo.name) + '_new_audio.' + outExt);
+  } catch(e) {
+    showErr('mg', 'Помилка: ' + e.message);
+    console.error(e);
+  }
+  ffmpegBusy = false;
+  updateMgBtn();
+});
+</script>
+</body>
+</html>
