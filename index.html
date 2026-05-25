@@ -6,6 +6,7 @@
 <title>AudioTools — Конвертер · LUFS · Очистка мови</title>
 <script src="/lib/ffmpeg.js"></script>
 <script src="/lib/ffmpeg-util.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root {
   --bg:      #09090f;
@@ -229,6 +230,64 @@ video{width:100%;border-radius:.625rem;background:#000;display:block;max-height:
 .btn-again{background:var(--s2);border:1px solid var(--border);color:var(--muted)}
 .btn-again:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
 
+/* ── AUTH SECTION ────────────────────────────────── */
+.auth-section{margin-left:auto;display:flex;align-items:center;flex-shrink:0}
+.btn-signin{
+  display:flex;align-items:center;gap:.5rem;
+  padding:.5rem 1.125rem;border:1px solid var(--border);
+  border-radius:.625rem;background:var(--s2);color:var(--text);
+  font-size:.9375rem;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;
+}
+.btn-signin:hover{border-color:rgba(255,255,255,.25);background:var(--s3)}
+.user-chip{display:flex;align-items:center;gap:.625rem;cursor:pointer}
+.chip-avatar{width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1.5px solid var(--border)}
+.chip-name{font-size:.9375rem;font-weight:500;color:var(--text);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-settings{
+  background:none;border:none;color:var(--muted);cursor:pointer;
+  padding:.25rem;font-size:1.125rem;line-height:1;transition:color .15s;flex-shrink:0;
+}
+.chip-settings:hover{color:var(--text)}
+
+/* ── SETTINGS MODAL ──────────────────────────────── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);
+  backdrop-filter:blur(6px);z-index:600;
+  display:none;align-items:center;justify-content:center;
+}
+.modal-overlay.show{display:flex}
+.modal-card{
+  background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--radius);padding:2rem;
+  width:min(460px,92vw);display:flex;flex-direction:column;gap:1.5rem;
+}
+.modal-head{display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:1.0625rem;font-weight:700}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.5rem;line-height:1;padding:.125rem .25rem;transition:color .15s}
+.modal-close:hover{color:var(--text)}
+.modal-user{display:flex;align-items:center;gap:1rem;padding:.875rem;background:var(--s2);border-radius:.625rem}
+.modal-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.modal-uname{font-size:1rem;font-weight:600;margin-bottom:.2rem}
+.modal-email{font-size:.875rem;color:var(--muted)}
+.modal-hint{font-size:.8125rem;color:var(--muted);margin-top:.375rem;line-height:1.45}
+.modal-hint a{color:#a78bfa;text-decoration:none}
+.modal-hint a:hover{text-decoration:underline}
+.modal-actions{display:flex;gap:.75rem}
+
+/* ── FRAME.IO BUTTON ─────────────────────────────── */
+.btn-frameio{
+  width:100%;display:flex;align-items:center;justify-content:center;gap:.5rem;
+  padding:.75rem 1.625rem;border:1px solid rgba(99,102,241,.35);
+  border-radius:.625rem;background:rgba(99,102,241,.08);
+  color:var(--text);font-size:1rem;font-weight:600;cursor:pointer;transition:all .18s;
+}
+.btn-frameio:not(:disabled):hover{border-color:var(--accent);background:rgba(124,58,237,.15)}
+.btn-frameio:disabled{opacity:.35;cursor:not-allowed}
+.btn-frameio.success{background:linear-gradient(135deg,#059669,#10b981);border-color:transparent;color:#fff}
+.btn-frameio.error{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08);color:#fca5a5}
+.frameio-link{display:none;text-align:center;font-size:.875rem;color:#a78bfa;text-decoration:none}
+.frameio-link.show{display:block}
+.frameio-link:hover{text-decoration:underline}
+
 /* ── FOOTER ──────────────────────────────────────── */
 footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-size:.875rem;border-top:1px solid var(--border);margin-top:1rem}
 
@@ -267,7 +326,48 @@ footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-si
     <button class="tab" data-tab="vconverter">Відео конвертер</button>
     <button class="tab" data-tab="merge">Аудіореплейсер</button>
   </nav>
+  <div class="auth-section">
+    <button class="btn-signin" id="btn-signin">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Sign in with Google
+    </button>
+    <div class="user-chip hidden" id="user-chip">
+      <img class="chip-avatar" id="chip-avatar" src="" alt="">
+      <span class="chip-name" id="chip-name"></span>
+      <button class="chip-settings" id="btn-settings" title="Налаштування">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+    </div>
+  </div>
 </header>
+
+<!-- ══════════════════ SETTINGS MODAL ══════════════════ -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title">Налаштування акаунту</div>
+      <button class="modal-close" id="modal-close">×</button>
+    </div>
+    <div class="modal-user">
+      <img class="modal-avatar" id="modal-avatar" src="" alt="">
+      <div>
+        <div class="modal-uname" id="modal-uname"></div>
+        <div class="modal-email" id="modal-email"></div>
+      </div>
+    </div>
+    <div class="sg">
+      <label for="frameio-token-input">Frame.io API Token</label>
+      <input type="password" id="frameio-token-input" placeholder="fio2-…" autocomplete="off">
+      <div class="modal-hint">
+        Отримати токен: <a href="https://app.frame.io/settings/developer" target="_blank">Frame.io → Settings → Developer Tokens</a>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-dl" id="btn-save-settings" style="flex:1">Зберегти</button>
+      <button class="btn btn-again" id="btn-logout">Вийти</button>
+    </div>
+  </div>
+</div>
 
 <main>
 
@@ -741,6 +841,11 @@ footer{text-align:center;padding:1.5rem 2.5rem 2.5rem;color:var(--muted);font-si
           <button class="btn btn-dl" id="mg-dl">Завантажити</button>
           <button class="btn btn-again" id="mg-again">Ще раз</button>
         </div>
+        <button class="btn-frameio" id="mg-frameio-btn" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Опублікувати на Frame.io
+        </button>
+        <a class="frameio-link" id="mg-frameio-link" target="_blank">Переглянути на Frame.io →</a>
       </div>
       <div class="alert alert-err" id="mg-err"></div>
       <button class="btn-process" id="mg-btn" disabled>Замінити аудіо</button>
@@ -1333,7 +1438,7 @@ document.getElementById('vc-btn').addEventListener('click', async () => {
 // ═══════════════════════════════════════════════════
 //  ── АУДІОРЕПЛЕЙСЕР ──
 // ═══════════════════════════════════════════════════
-let mgVideo = null, mgAudio = null;
+let mgVideo = null, mgAudio = null, mgResultBlob = null, mgResultFilename = null;
 
 function updateMgBtn() {
   document.getElementById('mg-btn').disabled = !(mgVideo && mgAudio);
@@ -1379,6 +1484,11 @@ setupDrop('mg-a-drop','mg-a-input','mg-a-file-row','mg-a-file-name','mg-a-file-s
 document.getElementById('mg-again').addEventListener('click', () => {
   document.getElementById('mg-result').classList.remove('show');
   document.getElementById('mg-empty').classList.remove('hidden');
+  mgResultBlob = null; mgResultFilename = null;
+  const fbl = document.getElementById('mg-frameio-btn');
+  fbl.textContent = 'Опублікувати на Frame.io'; fbl.className = 'btn-frameio';
+  document.getElementById('mg-frameio-link').classList.remove('show');
+  updatePublishBtn();
 });
 
 document.getElementById('mg-btn').addEventListener('click', async () => {
@@ -1421,13 +1531,161 @@ document.getElementById('mg-btn').addEventListener('click', async () => {
     try { await ff.deleteFile(aName); } catch(e) {}
     try { await ff.deleteFile(outName); } catch(e) {}
 
-    showResultVideo('mg', blob, stem(mgVideo.name) + '_new_audio.' + outExt);
+    mgResultBlob = blob;
+    mgResultFilename = stem(mgVideo.name) + '_new_audio.' + outExt;
+    updatePublishBtn();
+    showResultVideo('mg', blob, mgResultFilename);
   } catch(e) {
     showErr('mg', 'Помилка: ' + e.message);
     console.error(e);
   }
   ffmpegBusy = false;
   updateMgBtn();
+});
+
+// ═══════════════════════════════════════════════════
+//  Google Sign-In
+//  Заміни на свій client_id з Google Cloud Console:
+//  console.cloud.google.com → APIs → Credentials → OAuth 2.0 Client IDs
+// ═══════════════════════════════════════════════════
+const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID_HERE';
+
+function decodeJWT(token) {
+  const b64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+  const pad = b64.length % 4 ? b64 + '='.repeat(4 - b64.length % 4) : b64;
+  return JSON.parse(decodeURIComponent(atob(pad).split('').map(c =>
+    '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+}
+
+function onGoogleSignIn(response) {
+  const u = decodeJWT(response.credential);
+  const user = { name: u.name, email: u.email, picture: u.picture, sub: u.sub };
+  localStorage.setItem('ht_user', JSON.stringify(user));
+  applyAuthUI(user);
+  updatePublishBtn();
+}
+
+function applyAuthUI(user) {
+  document.getElementById('btn-signin').classList.add('hidden');
+  const chip = document.getElementById('user-chip');
+  chip.classList.remove('hidden');
+  document.getElementById('chip-avatar').src = user.picture || '';
+  document.getElementById('chip-name').textContent = user.name.split(' ')[0];
+}
+
+function clearAuthUI() {
+  document.getElementById('btn-signin').classList.remove('hidden');
+  document.getElementById('user-chip').classList.add('hidden');
+}
+
+function initGoogleSignIn() {
+  const saved = localStorage.getItem('ht_user');
+  if (saved) applyAuthUI(JSON.parse(saved));
+  if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID_HERE') return;
+  window.addEventListener('load', () => {
+    if (typeof google === 'undefined') return;
+    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onGoogleSignIn, auto_select: true });
+    if (!saved) google.accounts.id.prompt();
+  });
+}
+initGoogleSignIn();
+
+document.getElementById('btn-signin').addEventListener('click', () => {
+  if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID_HERE') {
+    alert('Заповни GOOGLE_CLIENT_ID в коді або зверніться до адміністратора.');
+    return;
+  }
+  google.accounts.id.prompt();
+});
+
+// ── Settings modal ──────────────────────────────────
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+document.getElementById('modal-close').addEventListener('click', () =>
+  document.getElementById('settings-modal').classList.remove('show'));
+document.getElementById('settings-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('settings-modal'))
+    document.getElementById('settings-modal').classList.remove('show');
+});
+
+function openSettings() {
+  const user = JSON.parse(localStorage.getItem('ht_user') || '{}');
+  document.getElementById('modal-avatar').src = user.picture || '';
+  document.getElementById('modal-uname').textContent = user.name || '';
+  document.getElementById('modal-email').textContent = user.email || '';
+  document.getElementById('frameio-token-input').value = localStorage.getItem('ht_frameio_token') || '';
+  document.getElementById('settings-modal').classList.add('show');
+}
+
+document.getElementById('btn-save-settings').addEventListener('click', () => {
+  const t = document.getElementById('frameio-token-input').value.trim();
+  if (t) localStorage.setItem('ht_frameio_token', t);
+  else localStorage.removeItem('ht_frameio_token');
+  document.getElementById('settings-modal').classList.remove('show');
+  updatePublishBtn();
+});
+
+document.getElementById('btn-logout').addEventListener('click', () => {
+  localStorage.removeItem('ht_user');
+  localStorage.removeItem('ht_frameio_token');
+  clearAuthUI();
+  document.getElementById('settings-modal').classList.remove('show');
+  updatePublishBtn();
+  if (GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID_HERE' && typeof google !== 'undefined')
+    google.accounts.id.disableAutoSelect();
+});
+
+// ── Publish button state ────────────────────────────
+function updatePublishBtn() {
+  const active = !!(localStorage.getItem('ht_user') && localStorage.getItem('ht_frameio_token') && mgResultBlob);
+  const btn = document.getElementById('mg-frameio-btn');
+  if (btn) btn.disabled = !active;
+}
+
+// ── Frame.io upload ─────────────────────────────────
+document.getElementById('mg-frameio-btn').addEventListener('click', async () => {
+  const token = localStorage.getItem('ht_frameio_token');
+  if (!token || !mgResultBlob) return;
+
+  const btn = document.getElementById('mg-frameio-btn');
+  const link = document.getElementById('mg-frameio-link');
+  btn.disabled = true;
+  btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Завантаження…';
+
+  try {
+    const h = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+    // 1. Get account info
+    const me = await fetch('https://api.frame.io/v2/me', { headers: h }).then(r => {
+      if (!r.ok) throw new Error('Невірний Frame.io токен (' + r.status + ')');
+      return r.json();
+    });
+
+    // 2. Get teams
+    const teams = await fetch(`https://api.frame.io/v2/teams?account_id=${me.account_id}&page_size=5`, { headers: h }).then(r => r.json());
+    if (!teams.length) throw new Error('Немає команд у Frame.io');
+
+    // 3. Get projects
+    const projects = await fetch(`https://api.frame.io/v2/teams/${teams[0].id}/projects`, { headers: h }).then(r => r.json());
+    if (!projects.length) throw new Error('Немає проєктів у Frame.io');
+
+    // 4. Create asset
+    const asset = await fetch(`https://api.frame.io/v2/assets/${projects[0].root_asset_id}`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ name: mgResultFilename, type: 'file', filesize: mgResultBlob.size }),
+    }).then(r => r.json());
+
+    // 5. Upload to S3
+    await fetch(asset.upload_urls[0], { method: 'PUT', body: mgResultBlob, headers: { 'Content-Type': mgResultBlob.type || 'video/mp4' } });
+
+    btn.className = 'btn-frameio success';
+    btn.innerHTML = '✓ Завантажено на Frame.io';
+    link.href = `https://app.frame.io/projects/${projects[0].id}`;
+    link.classList.add('show');
+  } catch(e) {
+    btn.className = 'btn-frameio error';
+    btn.innerHTML = '✕ ' + e.message;
+    btn.disabled = false;
+  }
 });
 </script>
 </body>
